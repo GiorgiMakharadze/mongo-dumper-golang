@@ -6,12 +6,18 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/GiorgiMakharadze/mongo-dumper-golang/config"
 	"github.com/GiorgiMakharadze/mongo-dumper-golang/dumper"
 	"github.com/GiorgiMakharadze/mongo-dumper-golang/scheduler"
 )
 
 func main() {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+
 	cfg := config.LoadConfig()
 
 	err := os.MkdirAll(cfg.DumpDir, os.ModePerm)

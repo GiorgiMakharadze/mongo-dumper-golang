@@ -1,11 +1,8 @@
 package dumper
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -13,6 +10,7 @@ import (
 	"time"
 
 	"github.com/GiorgiMakharadze/mongo-dumper-golang/config"
+	"github.com/sirupsen/logrus"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -30,7 +28,6 @@ type Dumper struct {
 }
 
 func NewDumper(cfg *config.Config) *Dumper {
-	// Load AWS configuration
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
 		awsconfig.WithRegion(cfg.AWSRegion),
 	)
@@ -38,11 +35,12 @@ func NewDumper(cfg *config.Config) *Dumper {
 		log.Fatalf("unable to load AWS SDK config, %v", err)
 	}
 
-	// Create S3 client
 	s3Client := s3.NewFromConfig(awsCfg)
 
-	// Create uploader
-	uploader := manager.NewUploader(s3Client)
+	uploader := manager.NewUploader(s3Client, func(u *manager.Uploader) {
+		u.PartSize = 10 * 1024 * 1024
+		u.Concurrency = 10             
+	})
 
 	return &Dumper{
 		MongoURL:  cfg.MongoURL,
@@ -54,10 +52,11 @@ func NewDumper(cfg *config.Config) *Dumper {
 	}
 }
 
+
 func (d *Dumper) Dump() {
 	now := time.Now()
 
-	dateDir := now.Format("02-01")
+	dateDir := now.Format("2006-01-02")
 	timeDir := now.Format("15:04:05")
 	fullPath := filepath.Join(d.DumpDir, dateDir, timeDir)
 
@@ -75,7 +74,7 @@ func (d *Dumper) Dump() {
 		return
 	}
 
-	log.Printf("Successfully created dump at %s", fullPath)
+	logrus.Infof("Successfully created dump at %s", fullPath)
 
 	archivePath, err := d.compressDump(fullPath)
 	if err != nil {
@@ -91,69 +90,21 @@ func (d *Dumper) Dump() {
 		return
 	}
 
-	log.Printf("Successfully uploaded dump to s3://%s/%s", d.S3Bucket, s3Key)
+	logrus.Infof("Successfully uploaded dump to s3://%s/%s", d.S3Bucket, s3Key)
 
 	os.Remove(archivePath)
 }
 
 func (d *Dumper) compressDump(sourceDir string) (string, error) {
 	archiveName := sourceDir + ".tar.gz"
-	archiveFile, err := os.Create(archiveName)
+	cmd := exec.Command("tar", "-czf", archiveName, "-C", filepath.Dir(sourceDir), filepath.Base(sourceDir))
+	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("failed to create archive file: %w", err)
+		return "", fmt.Errorf("failed to compress dump using tar and pigz: %w", err)
 	}
-	defer archiveFile.Close()
-
-	gw := gzip.NewWriter(archiveFile)
-	defer gw.Close()
-
-	tw := tar.NewWriter(gw)
-	defer tw.Close()
-
-	err = filepath.Walk(sourceDir, func(file string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		header, err := tar.FileInfoHeader(fi, fi.Name())
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(filepath.Dir(sourceDir), file)
-		if err != nil {
-			return err
-		}
-		header.Name = relPath
-
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-
-		if !fi.Mode().IsRegular() {
-			return nil
-		}
-
-		f, err := os.Open(file)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		_, err = io.Copy(tw, f)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("error walking the path %q: %v", sourceDir, err)
-	}
-
 	return archiveName, nil
 }
+
 
 func (d *Dumper) uploadToS3(filePath, key string) error {
 	file, err := os.Open(filePath)

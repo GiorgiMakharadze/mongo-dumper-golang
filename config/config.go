@@ -8,13 +8,14 @@ import (
 )
 
 type Config struct {
-	MongoURL string
-	DumpDir  string
-	Schedule string
+	MongoURL  string
+	DumpDir   string
+	Schedule  string
+	AWSRegion string
+	S3Bucket  string
 }
 
 func LoadConfig() *Config {
-	// Load .env file if it exists
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("No .env file found. Proceeding with environment variables.")
@@ -27,16 +28,26 @@ func LoadConfig() *Config {
 
 	dumpDir := os.Getenv("DUMP_DIR")
 	if dumpDir == "" {
-		// Default dump directory
-		dumpDir = "./cyclix-dumps"
+		dumpDir = "/tmp/cyclix-dumps"
 	}
 
-	// Schedule in cron format. Every 30 minutes.
 	schedule := "0 */30 * * * *"
 
+	awsRegion := os.Getenv("AWS_REGION")
+	if awsRegion == "" {
+		log.Fatal("AWS_REGION environment variable not set")
+	}
+
+	s3Bucket := os.Getenv("S3_BUCKET")
+	if s3Bucket == "" {
+		log.Fatal("S3_BUCKET environment variable not set")
+	}
+
 	return &Config{
-		MongoURL: mongoURL,
-		DumpDir:  dumpDir,
-		Schedule: schedule,
+		MongoURL:  mongoURL,
+		DumpDir:   dumpDir,
+		Schedule:  schedule,
+		AWSRegion: awsRegion,
+		S3Bucket:  s3Bucket,
 	}
 }

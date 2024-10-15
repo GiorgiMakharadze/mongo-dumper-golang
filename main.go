@@ -6,9 +6,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/CoinRock-Ventures/mongo-dumper-go/config"
-	"github.com/CoinRock-Ventures/mongo-dumper-go/dumper"
-	"github.com/CoinRock-Ventures/mongo-dumper-go/scheduler"
+	"github.com/GiorgiMakharadze/mongo-dumper-golang/config"
+	"github.com/GiorgiMakharadze/mongo-dumper-golang/dumper"
+	"github.com/GiorgiMakharadze/mongo-dumper-golang/scheduler"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 		log.Fatalf("Failed to create dump directory: %v", err)
 	}
 
-	d := dumper.NewDumper(cfg.MongoURL, cfg.DumpDir)
+	d := dumper.NewDumper(cfg)
 
 	s := scheduler.NewScheduler()
 

@@ -31,7 +31,10 @@ func LoadConfig() *Config {
 		dumpDir = "/tmp/cyclix-dumps"
 	}
 
-	schedule := "0 */30 * * * *"
+	schedule := os.Getenv("SCHEDULE")
+	if schedule == "" {
+		schedule = "0 */30 * * * *"
+	}
 
 	awsRegion := os.Getenv("AWS_REGION")
 	if awsRegion == "" {

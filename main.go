@@ -1,10 +1,12 @@
 package main
 
 import (
-	"log"
+	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -14,32 +16,52 @@ import (
 )
 
 func main() {
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
+	logrus.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: time.RFC3339,
 	})
 
 	cfg := config.LoadConfig()
 
 	err := os.MkdirAll(cfg.DumpDir, os.ModePerm)
 	if err != nil {
-		log.Fatalf("Failed to create dump directory: %v", err)
+		logrus.Fatalf("Failed to create dump directory: %v", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	d := dumper.NewDumper(cfg)
 
+	if err := d.ValidateDependencies(); err != nil {
+		logrus.Fatalf("Dependency validation failed: %v", err)
+	}
+
 	s := scheduler.NewScheduler()
 
-	s.Start(cfg.Schedule, d.Dump)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := s.Start(ctx, cfg.Schedule, d.Dump); err != nil {
+			logrus.Errorf("Scheduler encountered an error: %v", err)
+		}
+	}()
 
-	log.Println("MongoDB dump scheduler started.")
+	logrus.Info("MongoDB dump scheduler started.")
 
-	d.Dump()
+	go func() {
+		if err := d.Dump(ctx); err != nil {
+			logrus.Errorf("Initial dump failed: %v", err)
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down scheduler...")
+	logrus.Info("Shutting down scheduler...")
+	cancel()
 	s.Stop()
-	log.Println("Scheduler stopped.")
+	wg.Wait()
+	logrus.Info("Scheduler stopped.")
 }
